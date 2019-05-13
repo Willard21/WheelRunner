@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<!-- Matter.js physics engine. Just testing things out. -->
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>Moon Sand</title>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/processing.js/1.6.6/processing.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/matter-js@0.14.2/build/matter.min.js"></script>
+    
+    </head>
+    <body style='margin: 0px; overflow: hidden; padding : 0px'>
+    <script>
+var MAX_SPEED = 10;
+var darkMode = false;
+var floorSize = 5;
+var floorDensity = 0.035;
+var torque = 0.1;
+
+//I can't directly access other libraries within the Processing script.
+var Engine = Matter.Engine,
+    World = Matter.World,
+    Bodies = Matter.Bodies,
+    Body = Matter.Body,
+    Sleeping = Matter.Sleeping,
+    Composites = Matter.Composites,
+	Common = Matter.Common;
+	Events = Matter.Events;
+var particles = [];
+var barriers = [];
+var keys = [];
+var world;
+var engine;
+engine = Engine.create({
+    enableSleeping: false
+});
+world = engine.world;
+
+//Override the Engine's default gravity behavior so I can disable it for certain objects.
+Engine._bodiesApplyGravity = function(bodies, gravity) {
+    var gravityScale = typeof gravity.scale !== 'undefined' ? gravity.scale : 0.001;
+
+    if ((gravity.x === 0 && gravity.y === 0) || gravityScale === 0) {
+        return;
+    }
+    
+    for (let i in bodies) {
+        let body = bodies[i];
+        if (body.isStatic || body.isSleeping || body.ignoreGravity)
+            continue;
+        // apply gravity
+        body.force.y += body.mass * gravity.y * gravityScale;
+        body.force.x += body.mass * gravity.x * gravityScale;
+    }
+};
+
+document.onkeydown = function(e) {
+    keys[e.key] = true;
+    if (e.key === 'p') {
+        console.log(barriers[0].body);
+    }
+    if (e.key === 's') {
+        Body.setAngularVelocity(particles[0].body, 0);
+        particles[0].torque = 0;
+	}
+	if (e.key === 'ArrowUp') {
+		Body.set(particles[0].body, "restitution", 20)
+	}
+}
+document.onkeyup = function(e) {
+	keys[e.key] = false;
+	if (e.key === 'ArrowUp') {
+		Body.set(particles[0].body, "restitution", 0)
+	}
+}
+var sign = Common.sign;
+var collisions = 0;
+
+Events.on(engine, 'collisionStart', function(event) {
+	var pairs = event.pairs;
+
+	// change object colours to show those starting a collision
+	for (var i = 0; i < pairs.length; i++) {
+		var pair = pairs[i];
+		let notPlayer = pair.bodyA.name === "Player" ? pair.bodyB : pair.bodyA;
+		let player = pair.bodyA === notPlayer ? pair.bodyB : pair.bodyA;
+		if (!notPlayer.isStatic && !notPlayer.hit) {
+			collisions++;
+			notPlayer.hit = true;
+		}
+	}
+});
+
+    </script>
+    <script type="text/processing">
+var vector = Matter.Vector.create(0, 0);
+var origin = {x: 0, y: 0};
+
+
+function Pool(clss) {
+    this.objects = [];
+    this.length = 0;
+    this.clss = clss;
+};
+Pool.prototype.getNew = function() {
+    if (this.length == 0) {
+        return new this.clss(...arguments);
+    }
+    else if (!this.reset){
+        let ret = this.objects[--this.length];
+		this.ret.constructor.apply(ret, ...arguments);
+        return ret;
+    }
+    else {
+        let ret = this.objects[--this.length];
+		this.reset(ret, ...arguments);
+        return ret;
+    }
+};
+Pool.prototype.free = function(obj) {
+    if (obj.body) {
+        World.remove(world, obj.body);
+    }
+	this.objects[this.length++] = obj;
+};
+
+function Particle(x, y, r, options) {
+    this.body = Bodies.circle(x, y, r, options);
+    this.hue = random(0, 255);
+    World.add(world, this.body);
+}
+Particle.prototype.draw = function() {
+    let pos = this.body.position;
+    let r = this.body.circleRadius
+	colorMode(HSB);
+	if (darkMode) {
+		fill(this.hue, 200, 80);
+	} else {
+		fill(this.hue, 200, 255);
+	}
+    
+    noStroke();
+    pushMatrix();
+    translate(pos.x, pos.y);
+    rotate(this.body.angle);
+    ellipse(0, 0, r * 2, r * 2);
+    stroke(0);
+    line(0, 0, 0, r);
+    popMatrix();
+    colorMode(RGB);
+}
+Particle.pool = new Pool(Particle);
+
+function Barrier(x, y, w, h, options) {
+    this.w = w;
+    this.h = h;
+    this.body = Bodies.rectangle(x, y, w, h, options);
+    World.add(world, this.body);
+}
+Barrier.prototype.draw = function() {
+	let pos = this.body.position;
+	if (darkMode) {
+		fill(this.body.isStatic ? color(150, 0, 0) : 120);
+	} else {
+		fill(this.body.isStatic ? color(255, 0, 0) : 0);
+	}
+    noStroke();
+    rectMode(CENTER);
+    pushMatrix();
+    translate(pos.x, pos.y);
+    rotate(this.body.angle);
+    rect(0, 0, this.w, this.h)
+    popMatrix();
+}
+barriers.draw = function() {
+	let c = 120;
+	let s;
+	
+	for(let i = 0; i < barriers.length; i++) {
+		let body = barriers[i].body;
+
+		if (s !== body.isStatic) {
+			if (darkMode) {
+				c = body.isStatic ? color(150, 0, 0) : 120;
+			} else {
+				c = body.isStatic ? color(255, 0, 0) : 0;
+			}
+			s = body.isStatic;
+			stroke(c);
+		}
+
+		let v1 = body.vertices[0];
+		let v2 = body.vertices[1];
+		line(v1.x, v1.y, v2.x, v2.y);
+	}
+};
+Barrier.pool = new Pool(Barrier);
+Barrier.pool.reset = function(obj, x, y, w, h, options) {
+	let body = obj.body;
+	body.hit = false;
+	Body.setStatic(body, false);
+    vector.x = x;
+    vector.y = y;
+    Body.setPosition(body, vector);
+    Body.setAngle(body, options.angle);
+    Body.setVelocity(body, origin);
+	Body.setAngularVelocity(body, 0);
+	Body.setDensity(body, options.density);
+	Body.setStatic(body, options.isStatic || false);
+	World.add(world, obj.body);
+};
+Barrier.getDefaultSettings = function(ang, static) {
+	if (!Barrier.defaultSettings) {
+		Barrier.defaultSettings = {restitution: 0, friction: 0.5, angle: ang, ignoreGravity: true, density: floorDensity, collisionFilter: {category: 2, mask: 1}, isStatic: false};
+	}
+	Barrier.defaultSettings.angle = ang || 0;
+	Barrier.defaultSettings.isStatic = static || false;
+	return Barrier.defaultSettings;
+};
+
+{
+let w = 100;
+let h = 45;
+var car = {
+    w: w,
+    h: h,
+    composite:Composites.car(190, 100, w, h, 30)
+};
+car.check = function() {
+    console.log(this.composite);
+}
+car.draw = function() {
+    let pos = this.composite[0].position;
+    let w = this.composite.width;
+    let h = this.composite.height;
+    let r = this.composite.bodies[1].circleRadius;
+    fill(0);
+    noStroke();
+    //ellipse(pos.x - )
+};
+} //Car
+
+document.body.onresize = function(e) {
+    var w = document.body.clientWidth;
+    var h = window.innerHeight;
+    size(w, h);
+};
+
+function getY (x) {
+    return noise(x / (3000 - (x / 50))) * (1000 + x / 100);
+}
+function getRot(x) {
+    return atan2(getY(x+1)-getY(x), 1);
+}
+function getLen(x) {
+    let y = getY(x+1) - getY(x);
+    return sqrt(y*y + 1);
+}
+
+function createFloor(center, dx) {
+    for (let i = barriers.length - 1; i >= 0; i--) {
+        let body = barriers[i].body;
+        let pos = body.position;
+        let x;
+        if (pos.x - center.x > width / 2 || pos.x - center.x < -width / 2) {
+            Barrier.pool.free(barriers[i]);
+			barriers.splice(i, 1);
+		}
+	}
+	
+	let start = center.x + width / 2 * sign(dx) - (dx > 0 ? dx : 0);
+	let end = start + Math.min(abs(dx), width);
+	for (let i = start; i < end; i += floorSize) {
+        let f = Barrier.pool.getNew(i, getY(i), floorSize * 2, 1, Barrier.getDefaultSettings(getRot(i), false));
+		barriers.push(f);
+	}
+}
+
+function restart() {
+	noiseSeed(random(0, 100000000));
+	vector.x = random(-width, width);
+	vector.y = getY(vector.x) - 50;
+	let body = particles[0].body;
+	Body.setPosition(body, vector);
+    Body.setVelocity(body, origin);
+	Body.setAngularVelocity(body, 0);
+
+	//Remove all the floors
+	for (let i = barriers.length - 1; i >= 0; i--) {
+		Barrier.pool.free(barriers[i]);
+		barriers.splice(i, 1);
+	}
+
+	//Re-add all the floors
+	let start = vector.x - width/2;
+	let end = vector.x + width/2;
+	for (let i = start; i < end; i += floorSize) {
+		let f = Barrier.pool.getNew(i, getY(i), floorSize * 2, 1, Barrier.getDefaultSettings(getRot(i), true));
+		barriers.push(f);
+    }
+}
+
+function fps(x, y) {
+	fps.frames = fps.frames + 1 || 1;
+	fps.fps = fps.fps || 0;
+	if (fps.prevTime !== Math.floor(Date.now()/1000)) {
+		fps.prevTime = Math.floor(Date.now()/1000);
+		fps.fps = fps.frames;
+		fps.frames = 0;
+	}
+	text(fps.fps, x, y);
+}
+
+void setup() {
+    size(document.body.clientWidth, window.innerHeight);
+    frameRate(60);
+    //car.check();
+    
+    var y = getY;
+    for (let i = 0; i < width; i += floorSize) {
+        let ang = getRot(i);
+        let f = Barrier.pool.getNew(i, y(i), floorSize * 2, 1, Barrier.getDefaultSettings(getRot(i), true));
+        barriers.push(f);
+    }
+    
+	particles.push(Particle.pool.getNew(width/2, y(width/2) - 31, 30, {restitution: 0, friction: 1, staticFriction: 1}));
+	particles[0].body.name = "Player";
+}
+
+void draw() {
+	if (darkMode) {
+		background(0, 15, 20);
+		fill(200);
+	}
+	else {
+		background(0, 150, 200);
+		fill(0);
+	}
+	let player = particles[0].body;
+
+	if (frameCount % 1200 === 0) {
+		//particles.push(Particle.pool.getNew(player.position.x + width/2, 0, 50, {density: 1000}));
+	}
+
+	text(collisions, 20, 20);
+	fps(20, 40);
+    
+    if (keys.ArrowRight) {
+        particles[0].body.torque = torque;
+    }
+    if (keys.ArrowLeft) {
+        particles[0].body.torque = -torque;
+    }
+	
+	let startX = Math.floor(particles[0].body.position.x / floorSize);
+	Engine.update(engine);
+    
+	let center = particles[0].body.position;
+	if (center.y > getY(center.x) + 1000) {
+        restart();
+    } else {
+		createFloor(center, (Math.floor(center.x / floorSize) - startX) * floorSize);
+	}
+    pushMatrix();
+	translate(-center.x + width / 2, -center.y + height / 2);
+    
+    for (var i in particles) {
+        particles[i].draw();
+	}
+	barriers.draw();
+    /*for (var i in barriers) {
+        barriers[i].draw();
+    }*/
+    popMatrix();
+}
+    
+    </script>
+    <canvas id="sketch" style=" margin: 0px"></canvas>
+    </body>
+</html>
+<!-- This is some BlargBot code for estimating natural log. I typed it here because I didn't feel like making a new file. Please disregard.
+b!t set ln {void;
+{set;x;{args;0}}
+{set;ln2;0.69314718056}
+{set;pow2;0}
+{while;{get;x};>;2;{increment;pow2}{set;x;{math;/;{get;x};2}}}
+{decrement;x;1;false}
+{set;answer;
+	{math;+;
+		{math;*;
+			{get;ln2
+			};
+			{get;pow2
+			}
+		};
+		{math;-;
+			{get;x
+			};
+			{math;/;
+				{math;*;
+					{math;*;
+						{get;x
+						};
+						{get;x
+						}
+					};
+					{math;+;12;
+						{get;x
+						}
+					}
+				};
+				{math;+;24;
+					{math;*;18;
+						{get;x
+						}
+					}
+				}
+			}
+		}
+	}
+}
+}
+{get;answer}
+
+
+x - x*x * (12+x) / (24+18*x)
+
+a = 18*x = {math;*;18;{get;x}}
+b = 12+x = {math;+;12;{get;x}}
+c = x*x  = {math;*;{get;x};{get;x}}
+d = 24+a = 24+18*x = {math;+;24;{math;*;18;{get;x}}}
+e = b/d  = (12+x) / (24+18*x)
+f = c*e  = x*x * (12+x) / (24+18*x)
+g = x-f
+
+
+x - a = {math;-;{get;x};{math;/;{math;*;{math;*;{get;x};{get;x}};{math;+;12;{get;x}}};{math;+;24;{math;*;18;{get;x}}}}}
+a = b/c = {math;/;{math;*;{math;*;{get;x};{get;x}};{math;+;12;{get;x}}};{math;+;24;{math;*;18;{get;x}}}}
+b = d*e = {math;*;{math;*;{get;x};{get;x}};{math;+;12;{get;x}}}
+c = 24+f = {math;+;24;{math;*;18;{get;x}}}
+d = x*x = {math;*;{get;x};{get;x}}
+e = 12+x = {math;+;12;{get;x}}
+f = 18*x = {math;*;18;{get;x}}
+-->
