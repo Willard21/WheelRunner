@@ -1,20 +1,21 @@
 <!DOCTYPE html>
-<!-- Matter.js physics engine. Just testing things out. -->
 <html>
     <head>
         <meta charset="utf-8">
         <title>Moon Sand</title>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/processing.js/1.6.6/processing.min.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/matter-js@0.14.2/build/matter.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/processing.js/1.6.6/processing.min.js"></script><!--https://cdnjs.cloudflare.com/ajax/libs/processing.js/1.6.6/processing.min.js-->
+        <script src="https://cdn.jsdelivr.net/npm/matter-js@0.14.2/build/matter.min.js"></script><!--https://cdn.jsdelivr.net/npm/matter-js@0.14.2/build/matter.min.js-->
     
     </head>
     <body style='margin: 0px; overflow: hidden; padding : 0px'>
     <script>
 var MAX_SPEED = 10;
-var darkMode = false;
+var darkMode = true;
 var floorSize = 5;
 var floorDensity = 0.035;
 var torque = 0.1;
+var rocketFuel = 100;
+var player;
 
 //I can't directly access other libraries within the Processing script.
 var Engine = Matter.Engine,
@@ -63,13 +64,13 @@ document.onkeydown = function(e) {
         particles[0].torque = 0;
 	}
 	if (e.key === 'ArrowUp') {
-		Body.set(particles[0].body, "restitution", 20)
+		//Body.set(particles[0].body, "restitution", 20)
 	}
 }
 document.onkeyup = function(e) {
 	keys[e.key] = false;
 	if (e.key === 'ArrowUp') {
-		Body.set(particles[0].body, "restitution", 0)
+		//Body.set(particles[0].body, "restitution", 0)
 	}
 }
 var sign = Common.sign;
@@ -93,6 +94,10 @@ Events.on(engine, 'collisionStart', function(event) {
     </script>
     <script type="text/processing">
 var vector = Matter.Vector.create(0, 0);
+vector.set = function(x, y) {
+	vector.x = x;
+	vector.y = y;
+};
 var origin = {x: 0, y: 0};
 
 
@@ -283,6 +288,7 @@ function restart() {
 	Body.setPosition(body, vector);
     Body.setVelocity(body, origin);
 	Body.setAngularVelocity(body, 0);
+	rocketFuel = 100;
 
 	//Remove all the floors
 	for (let i = barriers.length - 1; i >= 0; i--) {
@@ -307,7 +313,7 @@ function fps(x, y) {
 		fps.fps = fps.frames;
 		fps.frames = 0;
 	}
-	text(fps.fps, x, y);
+	text("FPS: " + fps.fps, x, y);
 }
 
 void setup() {
@@ -321,9 +327,10 @@ void setup() {
         let f = Barrier.pool.getNew(i, y(i), floorSize * 2, 1, Barrier.getDefaultSettings(getRot(i), true));
         barriers.push(f);
     }
-    
-	particles.push(Particle.pool.getNew(width/2, y(width/2) - 31, 30, {restitution: 0, friction: 1, staticFriction: 1}));
-	particles[0].body.name = "Player";
+	
+	player = Particle.pool.getNew(width/2, y(width/2) - 31, 30, {restitution: 0, friction: 1, staticFriction: 1});
+	particles.push(player);
+	player.body.name = "Player";
 }
 
 void draw() {
@@ -335,26 +342,31 @@ void draw() {
 		background(0, 150, 200);
 		fill(0);
 	}
-	let player = particles[0].body;
 
 	if (frameCount % 1200 === 0) {
-		//particles.push(Particle.pool.getNew(player.position.x + width/2, 0, 50, {density: 1000}));
+		//particles.push(Particle.pool.getNew(player.body.position.x + width/2, 0, 50, {density: 1000}));
 	}
 
-	text(collisions, 20, 20);
+	text("Floor particles touched: " + collisions, 20, 20);
 	fps(20, 40);
+	text("Rocket Fuel: " + Math.ceil(rocketFuel), 20, 60);
     
     if (keys.ArrowRight) {
-        particles[0].body.torque = torque;
+        player.body.torque = torque;
     }
     if (keys.ArrowLeft) {
-        particles[0].body.torque = -torque;
-    }
+        player.body.torque = -torque;
+	}
+	if (keys.ArrowUp && rocketFuel > 0) {
+		vector.set(0, -0.01);
+		Body.applyForce(player.body, player.body.position, vector);
+		rocketFuel -= 1;
+	}
 	
-	let startX = Math.floor(particles[0].body.position.x / floorSize);
+	let startX = Math.floor(player.body.position.x / floorSize);
 	Engine.update(engine);
     
-	let center = particles[0].body.position;
+	let center = player.body.position;
 	if (center.y > getY(center.x) + 1000) {
         restart();
     } else {
@@ -367,9 +379,6 @@ void draw() {
         particles[i].draw();
 	}
 	barriers.draw();
-    /*for (var i in barriers) {
-        barriers[i].draw();
-    }*/
     popMatrix();
 }
     
@@ -377,67 +386,3 @@ void draw() {
     <canvas id="sketch" style=" margin: 0px"></canvas>
     </body>
 </html>
-<!-- This is some BlargBot code for estimating natural log. I typed it here because I didn't feel like making a new file. Please disregard.
-b!t set ln {void;
-{set;x;{args;0}}
-{set;ln2;0.69314718056}
-{set;pow2;0}
-{while;{get;x};>;2;{increment;pow2}{set;x;{math;/;{get;x};2}}}
-{decrement;x;1;false}
-{set;answer;
-	{math;+;
-		{math;*;
-			{get;ln2
-			};
-			{get;pow2
-			}
-		};
-		{math;-;
-			{get;x
-			};
-			{math;/;
-				{math;*;
-					{math;*;
-						{get;x
-						};
-						{get;x
-						}
-					};
-					{math;+;12;
-						{get;x
-						}
-					}
-				};
-				{math;+;24;
-					{math;*;18;
-						{get;x
-						}
-					}
-				}
-			}
-		}
-	}
-}
-}
-{get;answer}
-
-
-x - x*x * (12+x) / (24+18*x)
-
-a = 18*x = {math;*;18;{get;x}}
-b = 12+x = {math;+;12;{get;x}}
-c = x*x  = {math;*;{get;x};{get;x}}
-d = 24+a = 24+18*x = {math;+;24;{math;*;18;{get;x}}}
-e = b/d  = (12+x) / (24+18*x)
-f = c*e  = x*x * (12+x) / (24+18*x)
-g = x-f
-
-
-x - a = {math;-;{get;x};{math;/;{math;*;{math;*;{get;x};{get;x}};{math;+;12;{get;x}}};{math;+;24;{math;*;18;{get;x}}}}}
-a = b/c = {math;/;{math;*;{math;*;{get;x};{get;x}};{math;+;12;{get;x}}};{math;+;24;{math;*;18;{get;x}}}}
-b = d*e = {math;*;{math;*;{get;x};{get;x}};{math;+;12;{get;x}}}
-c = 24+f = {math;+;24;{math;*;18;{get;x}}}
-d = x*x = {math;*;{get;x};{get;x}}
-e = 12+x = {math;+;12;{get;x}}
-f = 18*x = {math;*;18;{get;x}}
--->
